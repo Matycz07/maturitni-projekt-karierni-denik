@@ -1,0 +1,52 @@
+services:
+  # --- BACKEND ---
+  backend:
+    container_name: node_backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+
+    ports:
+      - "6602:6602"
+    env_file:
+      - ./server/.env.local
+    environment:
+      - PORT=6602
+      - HOST=0.0.0.0
+      - DB_PATH=./server/database.sqlite
+    volumes:
+      - ./server/database.sqlite:/usr/src/app/server/database.sqlite
+    restart: always
+    networks:
+      - app-network
+
+  # --- FRONTEND ---
+  frontend:
+    container_name: nextjs_frontend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+      args:
+        - API_URL=http://backend:6602
+
+    ports:
+      - "6601:6601"
+    environment:
+      - NODE_ENV=production
+      - PORT=6601
+      - HOSTNAME=0.0.0.0
+      - API_URL=http://backend:6602
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+volumes:
+  db_data:
+
+networks:
+  app-network:
+    driver: bridge
