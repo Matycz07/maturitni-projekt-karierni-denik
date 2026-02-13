@@ -34,7 +34,8 @@ Docker se postaví a jede.
 U serveru, kde je IP, se musí definovat doména, a potom jak pojede doména, tak ho to z IP adresy hodí na doménu a tam jede.
 
 
-
+# DOKUMENTACE
+https://docs.google.com/document/d/1JY6yGZ7Ut6eF_QkrshbzZ78kzbBYdwkfHDrMBk8OA1s/edit?usp=sharing
 
 
 # Spuštení DOCKERU
