@@ -32,3 +32,12 @@ Teď budeme v části, kde se nachází Dockerfile. V části, kde se nachází 
 docker-compose up --build -d
 Docker se postaví a jede.
 U serveru, kde je IP, se musí definovat doména, a potom jak pojede doména, tak ho to z IP adresy hodí na doménu a tam jede.
+
+
+
+
+
+# Spuštení DOCKERU
+docker-compose up --build -d
+# VYPNUTÍ DOCKERU 
+docker-compose down
