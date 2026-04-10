@@ -29,7 +29,7 @@ export default function StudentLayout({
                 ></div>
             )}
 
-            <main className="flex-1 lg:ml-64 min-h-screen transition-all duration-300 ease-in-out">
+            <main className="flex-1 lg:pl-72 min-h-screen transition-all duration-300 ease-in-out">
                 {/* Desktop Header */}
                 <header className="hidden lg:flex items-center justify-between h-16 px-8 border-b border-slate-200 bg-white sticky top-0 z-50">
                     <div className="flex-1 max-w-2xl">

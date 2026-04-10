@@ -974,6 +974,7 @@ fastify.post("/api/teacher/tasks", async (request, reply) => {
     attachments,
     questions,
     testId: bodyTestId,
+    formId: bodyFormId,
   } = request.body;
   const userId = request.session.user.id;
 
@@ -1001,8 +1002,8 @@ fastify.post("/api/teacher/tasks", async (request, reply) => {
   // 1. Create Task
   const taskId = await new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO ukoly (nazev, popis, datum_odevzdani, id_tridy, typ, test_id) VALUES (?, ?, ?, ?, ?, ?)",
-      [title, description, dueDate, classId, type, bodyTestId],
+      "INSERT INTO ukoly (nazev, popis, datum_odevzdani, id_tridy, typ, test_id, form_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [title, description, dueDate, classId, type, bodyTestId || null, bodyFormId || null],
       function (err) {
         if (err) reject(err);
         else resolve(this.lastID);
@@ -1122,6 +1123,7 @@ fastify.put("/api/teacher/tasks/:id", async (request, reply) => {
     questions,
     outcomes,
     testId: bodyTestId,
+    formId: bodyFormId,
   } = request.body;
   const userId = request.session.user.id;
 
@@ -1150,8 +1152,8 @@ fastify.put("/api/teacher/tasks/:id", async (request, reply) => {
   // Update Task Details
   await new Promise((resolve, reject) => {
     db.run(
-      "UPDATE ukoly SET nazev = ?, popis = ?, datum_odevzdani = ?, typ = ?, test_id = ? WHERE id = ?",
-      [title, description, dueDate, type, bodyTestId, id],
+      "UPDATE ukoly SET nazev = ?, popis = ?, datum_odevzdani = ?, typ = ?, test_id = ?, form_id = ? WHERE id = ?",
+      [title, description, dueDate, type, bodyTestId || null, bodyFormId || null, id],
       (err) => {
         if (err) reject(err);
         else resolve();
@@ -1263,7 +1265,7 @@ fastify.get("/api/teacher/tasks/:id", async (request, reply) => {
   const task = await new Promise((resolve, reject) => {
     db.get(
       `
-            SELECT u.id, u.nazev as title, u.popis as description, u.datum_odevzdani as dueDate, u.id_tridy as classId, u.typ as type, u.test_id as testId
+            SELECT u.id, u.nazev as title, u.popis as description, u.datum_odevzdani as dueDate, u.id_tridy as classId, u.typ as type, u.test_id as testId, u.form_id as formId
             FROM ukoly u
             JOIN trida t ON u.id_tridy = t.id
             LEFT JOIN trida_ucitele tu ON t.id = tu.id_tridy
@@ -1570,16 +1572,20 @@ fastify.get(
     const tasks = await new Promise((resolve, reject) => {
       db.all(
         `
-            SELECT u.id, u.nazev as title, u.popis as description, u.datum_odevzdani as dueDate, u.typ as type, u.test_id as testId,
+            SELECT u.id, u.nazev as title, u.popis as description, u.datum_odevzdani as dueDate, u.typ as type, u.test_id as testId, u.form_id as formId,
                    ts.typ as templateType,
-                   o.id as submissionId, o.stav as status, o.datum_odevzdani as submittedAt, o.hodnoceni
+                   COALESCE(o.id, fo.id) as submissionId, 
+                   COALESCE(o.stav, fo.stav) as status, 
+                   COALESCE(o.datum_odevzdani, fo.datum) as submittedAt, 
+                   o.hodnoceni
             FROM ukoly u
             LEFT JOIN testy_sablony ts ON u.test_id = ts.id
-            LEFT JOIN odevzdani o ON u.id = o.ukol_id AND o.student_id = ?
+            LEFT JOIN odevzdani o ON u.id = o.ukol_id AND o.student_id = ? AND u.typ != 'form'
+            LEFT JOIN formular_odevzdani fo ON u.id = fo.ukol_id AND fo.student_id = ? AND u.typ = 'form'
             WHERE u.id_tridy = ?
             ORDER BY u.datum_odevzdani DESC
         `,
-        [studentId, classId],
+        [studentId, studentId, classId],
         (err, rows) => {
           if (err) reject(err);
           else resolve(rows);
@@ -1600,6 +1606,63 @@ fastify.get(
                 else resolve(rows);
               }
             );
+          });
+        } else if (task.type === "form") {
+          const questions = await new Promise((resolve, reject) => {
+            db.all(
+              "SELECT id, text, poradi, 1 as points FROM formular_otazky WHERE formular_id = ? ORDER BY poradi ASC",
+              [task.formId],
+              (err, rows) => { if (err) reject(err); else resolve(rows); }
+            );
+          });
+
+          for (const q of questions) {
+            const options = await new Promise((resolve, reject) => {
+              db.all(
+                "SELECT id, text FROM formular_moznosti WHERE otazka_id = ?",
+                [q.id],
+                (err, rows) => { if (err) reject(err); else resolve(rows); }
+              );
+            });
+
+            for (const opt of options) {
+              const outPoints = await new Promise((resolve, reject) => {
+                db.all(`
+                  SELECT fv.nazev, fmb.body 
+                  FROM formular_moznost_body fmb
+                  JOIN formular_vysledky fv ON fmb.vysledek_id = fv.id
+                  WHERE fmb.moznost_id = ?
+                `, [opt.id], (err, rows) => {
+                  if (err) reject(err); else resolve(rows);
+                });
+              });
+              opt.outcomePoints = {};
+              outPoints.forEach(p => { opt.outcomePoints[p.nazev] = p.body; });
+            }
+
+            const answers = await new Promise((resolve, reject) => {
+              db.all(
+                "SELECT moznost_id, text_odpovedi FROM formular_odpovedi WHERE odevzdani_id = ? AND otazka_id = ?",
+                [task.submissionId, q.id],
+                (err, rows) => { if (err) reject(err); else resolve(rows); }
+              );
+            });
+
+            q.options = options.map((o) => ({
+              id: o.id,
+              text: o.text,
+              isCorrect: false,
+              outcomePoints: o.outcomePoints
+            }));
+            q.studentAnswerIds = answers ? answers.map(a => a.moznost_id).filter(id => id !== null) : [];
+            q.textAnswer = answers ? answers.find(a => a.text_odpovedi)?.text_odpovedi : null;
+          }
+          task.testResults = questions;
+
+          task.outcomes = await new Promise((resolve, reject) => {
+            db.all("SELECT id, nazev FROM formular_vysledky WHERE formular_id = ?", [task.formId], (err, rows) => {
+              if (err) reject(err); else resolve(rows);
+            });
           });
         } else if (task.type === "test" || task.type === "outcome" || task.type === "predefined_test") {
           const qSource = task.testId ? { col: 'test_id', val: task.testId } : { col: 'ukol_id', val: task.id };
@@ -1752,9 +1815,12 @@ fastify.get("/api/student/tasks", async (request, reply) => {
   return new Promise((resolve, reject) => {
     db.all(
       `
-            SELECT u.id, u.nazev as title, u.popis as description, u.datum_odevzdani as dueDate, u.typ as type, u.test_id as testId,
+            SELECT u.id, u.nazev as title, u.popis as description, u.datum_odevzdani as dueDate, u.typ as type, u.test_id as testId, u.form_id as formId,
             ts.typ as templateType,
-            (SELECT COUNT(*) FROM odevzdani o WHERE o.ukol_id = u.id AND o.student_id = ? AND o.stav != 'draft') as isSubmitted,
+            CASE
+              WHEN u.typ = 'form' THEN (SELECT COUNT(*) FROM formular_odevzdani fo WHERE fo.formular_id = u.form_id AND fo.student_id = ? AND fo.ukol_id = u.id)
+              ELSE (SELECT COUNT(*) FROM odevzdani o WHERE o.ukol_id = u.id AND o.student_id = ? AND o.stav != 'draft')
+            END as isSubmitted,
             (SELECT o.datum_odevzdani FROM odevzdani o WHERE o.ukol_id = u.id AND o.student_id = ? AND o.stav != 'draft' LIMIT 1) as submittedAt
             FROM ukoly u
             LEFT JOIN testy_sablony ts ON u.test_id = ts.id
@@ -1762,7 +1828,7 @@ fastify.get("/api/student/tasks", async (request, reply) => {
             WHERE tz.id_uctu = ?
             ORDER BY u.datum_odevzdani ASC
         `,
-      [userId, userId, userId],
+      [userId, userId, userId, userId],
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
@@ -2149,6 +2215,37 @@ fastify.delete("/api/teacher/submissions/:id", async (request, reply) => {
       db.run("DELETE FROM odevzdani_prilohy WHERE odevzdani_id = ?", [id]);
       db.run("DELETE FROM student_odpovedi WHERE odevzdani_id = ?", [id]);
       db.run("DELETE FROM odevzdani WHERE id = ?", [id], (err) => {
+        if (err) reject(err); else resolve({ success: true });
+      });
+    });
+  });
+});
+
+fastify.delete("/api/teacher/form-submissions/:id", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const { id } = request.params; // formular_odevzdani ID
+  const userId = request.session.user.id;
+
+  // Verify ownership of the class the task belongs to
+  const check = await new Promise((resolve, reject) => {
+    db.get(`
+            SELECT fo.id 
+            FROM formular_odevzdani fo
+            JOIN ukoly u ON fo.ukol_id = u.id
+            JOIN trida t ON u.id_tridy = t.id
+            LEFT JOIN trida_ucitele tu ON t.id = tu.id_tridy
+            WHERE fo.id = ? AND (t.vlastnik_id = ? OR tu.id_uctu = ?)
+        `, [id, userId, userId], (err, row) => resolve(row));
+  });
+
+  if (!check) return reply.status(403).send({ error: "Access denied" });
+
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("DELETE FROM formular_odpovedi WHERE odevzdani_id = ?", [id]);
+      db.run("DELETE FROM formular_odevzdani WHERE id = ?", [id], (err) => {
         if (err) reject(err); else resolve({ success: true });
       });
     });
@@ -3529,6 +3626,621 @@ fastify.get("/api/teacher/classes/:classId/students/:studentId/portfolio", async
       }
     );
   });
+});
+
+// --- CUSTOM FORM BUILDER ROUTES ---
+
+// Teacher: List Forms
+fastify.get("/api/teacher/forms", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT f.*, 
+        (SELECT COUNT(*) FROM formular_otazky WHERE formular_id = f.id) as questionCount,
+        (SELECT COUNT(*) FROM formular_odevzdani WHERE formular_id = f.id) as submissionCount
+       FROM formulare f WHERE f.ucitel_id = ? ORDER BY f.created_at DESC`,
+      [userId],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
+  });
+});
+
+// Teacher: Create Form
+fastify.post("/api/teacher/forms", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  const { nazev, popis } = request.body;
+
+  if (!nazev) {
+    return reply.status(400).send({ error: "Název je povinný" });
+  }
+
+  return new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO formulare (ucitel_id, nazev, popis) VALUES (?, ?, ?)",
+      [userId, nazev, popis || ""],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ id: this.lastID, nazev, popis });
+      }
+    );
+  });
+});
+
+// Teacher: Get Form Detail (with questions, options, rules, outcomes)
+fastify.get("/api/teacher/forms/:id", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  const { id } = request.params;
+
+  const form = await new Promise((resolve, reject) => {
+    db.get("SELECT * FROM formulare WHERE id = ? AND ucitel_id = ?", [id, userId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+
+  if (!form) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  // Questions
+  const questions = await new Promise((resolve, reject) => {
+    db.all("SELECT * FROM formular_otazky WHERE formular_id = ? ORDER BY poradi", [id], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+
+  // Options for each question
+  for (const q of questions) {
+    q.options = await new Promise((resolve, reject) => {
+      db.all("SELECT * FROM formular_moznosti WHERE otazka_id = ? ORDER BY poradi", [q.id], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+
+    // Branching rules for each option
+    for (const opt of q.options) {
+      const rule = await new Promise((resolve, reject) => {
+        db.get("SELECT * FROM formular_pravidla WHERE moznost_id = ?", [opt.id], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      opt.branchTo = rule ? rule.cil_otazka_id : null;
+
+      // Outcome points
+      opt.outcomePoints = await new Promise((resolve, reject) => {
+        db.all("SELECT vysledek_id, body FROM formular_moznost_body WHERE moznost_id = ?", [opt.id], (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      });
+    }
+  }
+
+  // Outcomes
+  const outcomes = await new Promise((resolve, reject) => {
+    db.all("SELECT * FROM formular_vysledky WHERE formular_id = ? ORDER BY min_body ASC", [id], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+
+  return { ...form, questions, outcomes };
+});
+
+// Teacher: Update Form (full save with questions, options, rules, outcomes)
+fastify.put("/api/teacher/forms/:id", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  const { id } = request.params;
+  const { nazev, popis, questions, outcomes } = request.body;
+
+  // Verify ownership
+  const form = await new Promise((resolve, reject) => {
+    db.get("SELECT id FROM formulare WHERE id = ? AND ucitel_id = ?", [id, userId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+
+  if (!form) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  // Update form title/desc
+  await new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE formulare SET nazev = ?, popis = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [nazev, popis, id],
+      (err) => { if (err) reject(err); else resolve(); }
+    );
+  });
+
+  // Delete old data and rebuild
+  await new Promise((resolve, reject) => {
+    db.run("DELETE FROM formular_otazky WHERE formular_id = ?", [id], (err) => {
+      if (err) reject(err); else resolve();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    db.run("DELETE FROM formular_vysledky WHERE formular_id = ?", [id], (err) => {
+      if (err) reject(err); else resolve();
+    });
+  });
+
+  // Insert outcomes first (we need their IDs for option points)
+  const outcomeIdMap = {};
+  if (outcomes && outcomes.length > 0) {
+    for (const outcome of outcomes) {
+      const outcomeId = await new Promise((resolve, reject) => {
+        db.run(
+          "INSERT INTO formular_vysledky (formular_id, nazev, popis, min_body, max_body) VALUES (?, ?, ?, ?, ?)",
+          [id, outcome.nazev, outcome.popis || "", outcome.min_body || 0, outcome.max_body || 0],
+          function (err) {
+            if (err) reject(err);
+            else resolve(this.lastID);
+          }
+        );
+      });
+      outcomeIdMap[outcome.tempId || outcome.nazev] = outcomeId;
+    }
+  }
+
+  // Insert questions with options, rules, and outcome points
+  const questionIdMap = {};
+  if (questions && questions.length > 0) {
+    // First pass: create all questions to get their IDs
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const qId = await new Promise((resolve, reject) => {
+        db.run(
+          "INSERT INTO formular_otazky (formular_id, text, typ, poradi, je_povinne, pos_x, pos_y) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [id, q.text, q.typ || "radio", i, q.je_povinne !== undefined ? q.je_povinne : 1, q.x || 0, q.y || 0],
+          function (err) {
+            if (err) reject(err);
+            else resolve(this.lastID);
+          }
+        );
+      });
+      questionIdMap[q.tempId || i] = qId;
+    }
+
+    // Second pass: create options with branching rules
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const qId = questionIdMap[q.tempId || i];
+      if (q.options) {
+        for (let j = 0; j < q.options.length; j++) {
+          const opt = q.options[j];
+          const optId = await new Promise((resolve, reject) => {
+            db.run(
+              "INSERT INTO formular_moznosti (otazka_id, text, poradi) VALUES (?, ?, ?)",
+              [qId, opt.text, j],
+              function (err) {
+                if (err) reject(err);
+                else resolve(this.lastID);
+              }
+            );
+          });
+
+          // Branching rule
+          if (opt.branchTo !== null && opt.branchTo !== undefined) {
+            const targetQId = opt.branchTo === '_end' ? null : questionIdMap[opt.branchTo];
+            await new Promise((resolve, reject) => {
+              db.run(
+                "INSERT INTO formular_pravidla (moznost_id, cil_otazka_id) VALUES (?, ?)",
+                [optId, targetQId],
+                (err) => { if (err) reject(err); else resolve(); }
+              );
+            });
+          }
+
+          // Outcome points
+          if (opt.outcomePoints) {
+            for (const op of opt.outcomePoints) {
+              const realOutcomeId = outcomeIdMap[op.outcomeKey] || op.vysledek_id;
+              if (realOutcomeId) {
+                await new Promise((resolve, reject) => {
+                  db.run(
+                    "INSERT INTO formular_moznost_body (moznost_id, vysledek_id, body) VALUES (?, ?, ?)",
+                    [optId, realOutcomeId, op.body || 0],
+                    (err) => { if (err) reject(err); else resolve(); }
+                  );
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { success: true };
+});
+
+// Teacher: Delete Form
+fastify.delete("/api/teacher/forms/:id", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  const { id } = request.params;
+
+  return new Promise((resolve, reject) => {
+    db.run("DELETE FROM formulare WHERE id = ? AND ucitel_id = ?", [id, userId], function (err) {
+      if (err) reject(err);
+      else resolve({ success: true, changes: this.changes });
+    });
+  });
+});
+
+// Teacher: Assign Form to Class as Task
+fastify.post("/api/teacher/forms/:id/assign", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  const { id } = request.params;
+  const { classId, title, description, dueDate } = request.body;
+
+  // Verify form ownership
+  const form = await new Promise((resolve, reject) => {
+    db.get("SELECT * FROM formulare WHERE id = ? AND ucitel_id = ?", [id, userId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+  if (!form) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  // Create a task of type 'form'
+  const taskId = await new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO ukoly (nazev, popis, datum_odevzdani, id_tridy, typ, form_id) VALUES (?, ?, ?, ?, 'form', ?)",
+      [title || form.nazev, description || form.popis, dueDate || null, classId, id],
+      function (err) {
+        if (err) reject(err);
+        else resolve(this.lastID);
+      }
+    );
+  });
+
+  return { success: true, taskId };
+});
+
+// Teacher: Get Form Results
+fastify.get("/api/teacher/forms/:id/results", async (request, reply) => {
+  if (!request.session.user || request.session.user.role !== 1) {
+    return reply.status(403).send({ error: "Unauthorized" });
+  }
+  const userId = request.session.user.id;
+  const { id } = request.params;
+
+  // Verify ownership
+  const form = await new Promise((resolve, reject) => {
+    db.get("SELECT * FROM formulare WHERE id = ? AND ucitel_id = ?", [id, userId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+  if (!form) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  // Get all submissions with student info
+  const submissions = await new Promise((resolve, reject) => {
+    db.all(
+      `SELECT fo.*, u.jmeno, u.prijmeni, u.email, u.obrazek_url
+       FROM formular_odevzdani fo
+       JOIN ucty u ON fo.student_id = u.id
+       WHERE fo.formular_id = ?
+       ORDER BY fo.datum DESC`,
+      [id],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
+  });
+
+  // For each submission, get answers
+  for (const sub of submissions) {
+    sub.answers = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT fa.*, fq.text as question_text, fm.text as option_text
+         FROM formular_odpovedi fa
+         JOIN formular_otazky fq ON fa.otazka_id = fq.id
+         LEFT JOIN formular_moznosti fm ON fa.moznost_id = fm.id
+         WHERE fa.odevzdani_id = ?`,
+        [sub.id],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        }
+      );
+    });
+
+    // Calculate outcome for this submission
+    let outcomeScores = {};
+    for (const ans of sub.answers) {
+      if (ans.moznost_id) {
+        const points = await new Promise((resolve, reject) => {
+          db.all(
+            "SELECT vysledek_id, body FROM formular_moznost_body WHERE moznost_id = ?",
+            [ans.moznost_id],
+            (err, rows) => {
+              if (err) reject(err);
+              else resolve(rows);
+            }
+          );
+        });
+        for (const p of points) {
+          outcomeScores[p.vysledek_id] = (outcomeScores[p.vysledek_id] || 0) + p.body;
+        }
+      }
+    }
+    sub.outcomeScores = outcomeScores;
+  }
+
+  // Get outcomes for display
+  const outcomes = await new Promise((resolve, reject) => {
+    db.all("SELECT * FROM formular_vysledky WHERE formular_id = ?", [id], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+
+  return { form, submissions, outcomes };
+});
+
+// Student: Get Form to Fill
+fastify.get("/api/student/forms/:taskId", async (request, reply) => {
+  if (!request.session.user) {
+    return reply.status(401).send({ error: "Unauthorized" });
+  }
+  const { taskId } = request.params;
+  const userId = request.session.user.id;
+
+  // Get task and verify student has access
+  const task = await new Promise((resolve, reject) => {
+    db.get(
+      `SELECT u.* FROM ukoly u
+       JOIN trida_zaci tz ON u.id_tridy = tz.id_tridy
+       WHERE u.id = ? AND tz.id_uctu = ? AND u.typ = 'form'`,
+      [taskId, userId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      }
+    );
+  });
+
+  if (!task) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  const formId = task.form_id || task.test_id; // form_id column stores the form reference, fallback to test_id for old assignments
+
+  // Check if already submitted
+  const existing = await new Promise((resolve, reject) => {
+    db.get(
+      "SELECT id FROM formular_odevzdani WHERE formular_id = ? AND student_id = ? AND ukol_id = ?",
+      [formId, userId, taskId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      }
+    );
+  });
+
+  // Get form with questions
+  const form = await new Promise((resolve, reject) => {
+    db.get("SELECT * FROM formulare WHERE id = ?", [formId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+
+  if (!form) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  const questions = await new Promise((resolve, reject) => {
+    db.all("SELECT * FROM formular_otazky WHERE formular_id = ? ORDER BY poradi", [formId], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+
+  for (const q of questions) {
+    q.options = await new Promise((resolve, reject) => {
+      db.all("SELECT * FROM formular_moznosti WHERE otazka_id = ? ORDER BY poradi", [q.id], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+
+    // Include branching rules for client-side navigation
+    for (const opt of q.options) {
+      const rule = await new Promise((resolve, reject) => {
+        db.get("SELECT cil_otazka_id FROM formular_pravidla WHERE moznost_id = ?", [opt.id], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      opt.branchTo = rule ? rule.cil_otazka_id : null;
+    }
+  }
+
+  const outcomes = await new Promise((resolve, reject) => {
+    db.all("SELECT id, nazev, popis, min_body, max_body FROM formular_vysledky WHERE formular_id = ?", [formId], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+
+  return {
+    task,
+    form,
+    questions,
+    outcomes,
+    isSubmitted: !!existing
+  };
+});
+
+// Student: Submit Form
+fastify.post("/api/student/forms/:taskId/submit", async (request, reply) => {
+  if (!request.session.user) {
+    return reply.status(401).send({ error: "Unauthorized" });
+  }
+  const { taskId } = request.params;
+  const userId = request.session.user.id;
+  const { answers } = request.body; // Array of { otazka_id, moznost_id?, text_odpovedi? }
+
+  // Get task
+  const task = await new Promise((resolve, reject) => {
+    db.get(
+      `SELECT u.* FROM ukoly u
+       JOIN trida_zaci tz ON u.id_tridy = tz.id_tridy
+       WHERE u.id = ? AND tz.id_uctu = ? AND u.typ = 'form'`,
+      [taskId, userId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      }
+    );
+  });
+
+  if (!task) {
+    return reply.status(404).send({ error: "Formulář nenalezen" });
+  }
+
+  const formId = task.form_id || task.test_id;
+
+  // Check if already submitted
+  const existing = await new Promise((resolve, reject) => {
+    db.get(
+      "SELECT id FROM formular_odevzdani WHERE formular_id = ? AND student_id = ? AND ukol_id = ?",
+      [formId, userId, taskId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      }
+    );
+  });
+
+  if (existing) {
+    return reply.status(400).send({ error: "Formulář již byl odeslán" });
+  }
+
+  // Create submission
+  const submissionId = await new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO formular_odevzdani (formular_id, student_id, ukol_id) VALUES (?, ?, ?)",
+      [formId, userId, taskId],
+      function (err) {
+        if (err) reject(err);
+        else resolve(this.lastID);
+      }
+    );
+  });
+
+  // Insert answers
+  if (answers && answers.length > 0) {
+    for (const ans of answers) {
+      await new Promise((resolve, reject) => {
+        db.run(
+          "INSERT INTO formular_odpovedi (odevzdani_id, otazka_id, moznost_id, text_odpovedi) VALUES (?, ?, ?, ?)",
+          [submissionId, ans.otazka_id, ans.moznost_id || null, ans.text_odpovedi || null],
+          (err) => { if (err) reject(err); else resolve(); }
+        );
+      });
+    }
+  }
+
+  // Mark task as submitted in odevzdani table too
+  await new Promise((resolve, reject) => {
+    db.run(
+      "INSERT OR IGNORE INTO odevzdani (ukol_id, student_id) VALUES (?, ?)",
+      [taskId, userId],
+      (err) => { if (err) reject(err); else resolve(); }
+    );
+  });
+
+  // Calculate result
+  let outcomeScores = {};
+  for (const ans of answers) {
+    if (ans.moznost_id) {
+      const points = await new Promise((resolve, reject) => {
+        db.all(
+          "SELECT vysledek_id, body FROM formular_moznost_body WHERE moznost_id = ?",
+          [ans.moznost_id],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+          }
+        );
+      });
+      for (const p of points) {
+        outcomeScores[p.vysledek_id] = (outcomeScores[p.vysledek_id] || 0) + p.body;
+      }
+    }
+  }
+
+  // Get outcomes
+  const outcomes = await new Promise((resolve, reject) => {
+    db.all("SELECT * FROM formular_vysledky WHERE formular_id = ?", [formId], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+
+  // Find matching outcome
+  let totalScore = Object.values(outcomeScores).reduce((sum, v) => sum + v, 0);
+  let matchedOutcome = null;
+
+  // Check by individual outcome scores
+  let bestOutcome = null;
+  let bestScore = -Infinity;
+  for (const [outcomeId, score] of Object.entries(outcomeScores)) {
+    if (score > bestScore) {
+      bestScore = score;
+      bestOutcome = outcomes.find(o => o.id === parseInt(outcomeId));
+    }
+  }
+
+  // Or by range
+  if (!bestOutcome) {
+    matchedOutcome = outcomes.find(o => totalScore >= o.min_body && totalScore <= o.max_body);
+  } else {
+    matchedOutcome = bestOutcome;
+  }
+
+  return {
+    success: true,
+    submissionId,
+    outcomeScores,
+    totalScore,
+    matchedOutcome,
+    outcomes
+  };
 });
 
 // Run the server!

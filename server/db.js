@@ -155,6 +155,7 @@ function initDb() {
             );
           });
           db.run("ALTER TABLE ukoly ADD COLUMN test_id INTEGER", (err) => { });
+          db.run("ALTER TABLE ukoly ADD COLUMN form_id INTEGER", (err) => { });
         }
       }
     );
@@ -444,6 +445,100 @@ function initDb() {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (student_id) REFERENCES ucty (id) ON DELETE CASCADE
     )`);
+
+    // ===== CUSTOM FORM BUILDER TABLES =====
+
+    // Formulare (Custom Forms - created by teacher)
+    db.run(`CREATE TABLE IF NOT EXISTS formulare (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ucitel_id INTEGER NOT NULL,
+      nazev TEXT NOT NULL,
+      popis TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (ucitel_id) REFERENCES ucty (id) ON DELETE CASCADE
+    )`);
+
+    // Formular Otazky (Form Questions)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_otazky (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      formular_id INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      typ TEXT DEFAULT 'radio',
+      poradi INTEGER DEFAULT 0,
+      je_povinne INTEGER DEFAULT 1,
+      pos_x REAL DEFAULT 0,
+      pos_y REAL DEFAULT 0,
+      FOREIGN KEY (formular_id) REFERENCES formulare (id) ON DELETE CASCADE
+    )`, () => {
+      db.run("ALTER TABLE formular_otazky ADD COLUMN pos_x REAL DEFAULT 0", () => { });
+      db.run("ALTER TABLE formular_otazky ADD COLUMN pos_y REAL DEFAULT 0", () => { });
+    });
+
+    // Formular Moznosti (Form Options for radio/checkbox)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_moznosti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      otazka_id INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      poradi INTEGER DEFAULT 0,
+      FOREIGN KEY (otazka_id) REFERENCES formular_otazky (id) ON DELETE CASCADE
+    )`);
+
+    // Formular Pravidla (Branching Rules: if option X → go to question Y)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_pravidla (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      moznost_id INTEGER NOT NULL,
+      cil_otazka_id INTEGER,
+      FOREIGN KEY (moznost_id) REFERENCES formular_moznosti (id) ON DELETE CASCADE,
+      FOREIGN KEY (cil_otazka_id) REFERENCES formular_otazky (id) ON DELETE SET NULL
+    )`);
+
+    // Formular Vysledky (Result categories/outcomes)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_vysledky (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      formular_id INTEGER NOT NULL,
+      nazev TEXT NOT NULL,
+      popis TEXT,
+      min_body REAL DEFAULT 0,
+      max_body REAL DEFAULT 0,
+      FOREIGN KEY (formular_id) REFERENCES formulare (id) ON DELETE CASCADE
+    )`);
+
+    // Formular Moznost Body (Points per option → outcome)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_moznost_body (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      moznost_id INTEGER NOT NULL,
+      vysledek_id INTEGER NOT NULL,
+      body REAL DEFAULT 0,
+      FOREIGN KEY (moznost_id) REFERENCES formular_moznosti (id) ON DELETE CASCADE,
+      FOREIGN KEY (vysledek_id) REFERENCES formular_vysledky (id) ON DELETE CASCADE
+    )`);
+
+    // Formular Odevzdani (Student submissions)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_odevzdani (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      formular_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      ukol_id INTEGER,
+      datum TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      stav TEXT DEFAULT 'submitted',
+      FOREIGN KEY (formular_id) REFERENCES formulare (id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES ucty (id) ON DELETE CASCADE,
+      FOREIGN KEY (ukol_id) REFERENCES ukoly (id) ON DELETE SET NULL
+    )`);
+
+    // Formular Odpovedi (Student answers)
+    db.run(`CREATE TABLE IF NOT EXISTS formular_odpovedi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      odevzdani_id INTEGER NOT NULL,
+      otazka_id INTEGER NOT NULL,
+      moznost_id INTEGER,
+      text_odpovedi TEXT,
+      FOREIGN KEY (odevzdani_id) REFERENCES formular_odevzdani (id) ON DELETE CASCADE,
+      FOREIGN KEY (otazka_id) REFERENCES formular_otazky (id) ON DELETE CASCADE,
+      FOREIGN KEY (moznost_id) REFERENCES formular_moznosti (id) ON DELETE CASCADE
+    )`);
+
   });
 }
 

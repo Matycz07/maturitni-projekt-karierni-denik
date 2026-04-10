@@ -11,7 +11,7 @@ const TeacherLayout = ({ children }: TeacherLayoutProps) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-slate-50">
             {/* Mobile menu button */}
             <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}

@@ -26,11 +26,12 @@ interface TaskItem {
     description: string;
     dueDate: string;
     classId: number;
-    type: 'classic' | 'test' | 'outcome' | 'predefined_test';
+    type: 'classic' | 'test' | 'outcome' | 'predefined_test' | 'form';
     attachments?: Attachment[];
     questions?: Question[];
     outcomes?: { id?: number; nazev: string }[];
     testId?: number;
+    formId?: number;
 }
 
 interface DriveFile {
@@ -63,7 +64,7 @@ export default function UkolyPage() {
     const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
 
     // Form State
-    const [taskType, setTaskType] = useState<'classic' | 'test' | 'outcome' | 'predefined_test'>('classic');
+    const [taskType, setTaskType] = useState<'classic' | 'test' | 'outcome' | 'predefined_test' | 'form'>('classic');
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [dueDate, setDueDate] = useState('');
@@ -73,6 +74,10 @@ export default function UkolyPage() {
     // Templates
     const [templates, setTemplates] = useState<{ id: number; nazev: string, typ: string }[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
+    // Forms
+    const [forms, setForms] = useState<{ id: number; nazev: string }[]>([]);
+    const [selectedFormId, setSelectedFormId] = useState<string>('');
 
     // Classic specific
     const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -97,8 +102,21 @@ export default function UkolyPage() {
             fetchClasses();
             fetchTasks();
             fetchTemplates();
+            fetchForms();
         }
     }, [user]);
+
+    const fetchForms = async () => {
+        try {
+            const res = await fetch('/api/teacher/forms');
+            if (res.ok) {
+                const data = await res.json();
+                setForms(data);
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
 
     const fetchTemplates = async () => {
         try {
@@ -373,8 +391,9 @@ export default function UkolyPage() {
             description,
             dueDate,
             classId: parseInt(selectedClassId),
-            type: taskType === 'predefined_test' ? 'predefined_test' : taskType,
+            type: taskType,
             testId: taskType === 'predefined_test' ? parseInt(selectedTemplateId) : undefined,
+            formId: taskType === 'form' ? parseInt(selectedFormId) : undefined,
             attachments: taskType === 'classic' ? attachments : undefined,
             questions: (taskType === 'test' || taskType === 'outcome') ? questions : undefined,
             outcomes: taskType === 'outcome' ? outcomes : undefined
@@ -421,6 +440,7 @@ export default function UkolyPage() {
         setOutcomes([]);
         setTaskType('classic');
         setSelectedTemplateId('');
+        setSelectedFormId('');
         setIsEditing(false);
         setEditingTaskId(null);
     };
@@ -496,6 +516,14 @@ export default function UkolyPage() {
                                         >
                                             Vložit hotový test
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setTaskType('form')}
+                                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${taskType === 'form' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                                }`}
+                                        >
+                                            Formulář
+                                        </button>
                                     </div>
                                 </div>
 
@@ -521,6 +549,31 @@ export default function UkolyPage() {
                                         {templates.length === 0 && (
                                             <p className="mt-2 text-xs text-indigo-600">
                                                 Nemáte žádné šablony. <Link href="/ucitel/testy" className="underline font-bold">Vytvořte si je zde</Link>.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {taskType === 'form' && (
+                                    <div className="col-span-2 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 mb-2">
+                                        <label className="block text-sm font-semibold text-emerald-900 mb-2 flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                                            Vyberte formulář
+                                        </label>
+                                        <select
+                                            required={taskType === 'form'}
+                                            value={selectedFormId}
+                                            onChange={(e) => setSelectedFormId(e.target.value)}
+                                            className="w-full px-3 py-2 border border-emerald-200 rounded-md focus:ring-emerald-500 focus:border-emerald-500 bg-white shadow-sm"
+                                        >
+                                            <option value="">-- Vyberte formulář --</option>
+                                            {forms.map(f => (
+                                                <option key={f.id} value={f.id}>{f.nazev}</option>
+                                            ))}
+                                        </select>
+                                        {forms.length === 0 && (
+                                            <p className="mt-2 text-xs text-emerald-600">
+                                                Nemáte žádné formuláře. <a href="/ucitel/formulare" className="underline font-bold">Vytvořte je zde</a>.
                                             </p>
                                         )}
                                     </div>
@@ -716,6 +769,16 @@ export default function UkolyPage() {
                                         <h3 className="text-lg font-bold text-slate-800 mb-1">Předpřipravený obsah</h3>
                                         <p className="text-sm text-slate-500 max-w-sm mx-auto">
                                             Studentům se zobrazí otázky ze zvolené šablony. Obsah šablony můžete upravit v sekci <Link href="/ucitel/testy" className="text-indigo-600 font-semibold hover:underline">Testy a kvízy</Link>.
+                                        </p>
+                                    </div>
+                                ) : taskType === 'form' ? (
+                                    <div className="bg-emerald-50 p-8 rounded-xl border border-dashed border-emerald-300 text-center">
+                                        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14h6"></path><path d="M9 18h6"></path><path d="M9 10h6"></path></svg>
+                                        </div>
+                                        <h3 className="text-lg font-bold text-slate-800 mb-1">Vlastní formulář</h3>
+                                        <p className="text-sm text-slate-500 max-w-sm mx-auto">
+                                            Studentům se zobrazí vybraný formulář s větvením. Formuláře můžete vytvářet a upravovat v sekci <a href="/ucitel/formulare" className="text-emerald-600 font-semibold hover:underline">Formuláře</a>.
                                         </p>
                                     </div>
                                 ) : (
@@ -946,10 +1009,12 @@ export default function UkolyPage() {
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${(task.type === 'test' || task.type === 'predefined_test') ? 'bg-amber-100 text-amber-700' :
                                         task.type === 'outcome' ? 'bg-purple-100 text-purple-700' :
-                                            'bg-blue-100 text-blue-700'
+                                            task.type === 'form' ? 'bg-emerald-100 text-emerald-700' :
+                                                'bg-blue-100 text-blue-700'
                                         }`}>
                                         {task.type === 'test' || (task.type === 'predefined_test' && !templates.find(tpl => tpl.id === task.testId)?.typ.includes('outcome')) ? 'TEST' :
-                                            task.type === 'outcome' || (task.type === 'predefined_test' && templates.find(tpl => tpl.id === task.testId)?.typ === 'outcome') ? 'KVÍZ' : 'ÚKOL'}
+                                            task.type === 'outcome' || (task.type === 'predefined_test' && templates.find(tpl => tpl.id === task.testId)?.typ === 'outcome') ? 'KVÍZ' :
+                                                task.type === 'form' ? 'FORMULÁŘ' : 'ÚKOL'}
                                     </span>
                                     <h3 className="text-lg font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{task.title}</h3>
                                     <span className="text-xs text-slate-400 font-normal px-2 py-0.5 bg-slate-50 rounded border border-slate-100">
@@ -965,6 +1030,17 @@ export default function UkolyPage() {
                                 </div>
                             </div>
                             <div className="flex gap-2">
+                                {task.type === 'form' && task.formId && (
+                                    <Link
+                                        href={`/ucitel/formulare/${task.formId}/vysledky?taskId=${task.id}`}
+                                        className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-full transition-colors"
+                                        title="Zobrazit výsledky formuláře"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                        </svg>
+                                    </Link>
+                                )}
                                 <button
                                     onClick={() => handleEditTask(task.id)}
                                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"

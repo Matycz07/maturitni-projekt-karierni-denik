@@ -47,6 +47,7 @@ interface Question {
     points: number;
     options: Option[];
     studentAnswerIds?: number[];
+    textAnswer?: string | null;
 }
 
 interface StudentTask {
@@ -54,8 +55,9 @@ interface StudentTask {
     title: string;
     description: string;
     dueDate: string;
-    type: 'classic' | 'test' | 'outcome' | 'predefined_test';
+    type: 'classic' | 'test' | 'outcome' | 'predefined_test' | 'form';
     testId: number | null;
+    formId?: number | null;
     templateType?: string;
     submissionId: number | null;
     status: string | null; // e.g., 'submitted'
@@ -217,11 +219,12 @@ export default function ClassDetailPage() {
         }
     }, [selectedStudent, fetchStudentTasks, fetchStudentPortfolio]);
 
-    const handleResetSubmission = async (submissionId: number) => {
+    const handleResetSubmission = async (submissionId: number, type?: string) => {
         if (!confirm("Opravdu chcete smazat odevzdání tohoto studenta? Student bude moci úkol odevzdat znovu.")) return;
 
         try {
-            const res = await fetch(`/api/teacher/submissions/${submissionId}`, {
+            const endpoint = type === 'form' ? `/api/teacher/form-submissions/${submissionId}` : `/api/teacher/submissions/${submissionId}`;
+            const res = await fetch(endpoint, {
                 method: "DELETE",
             });
 
@@ -468,8 +471,8 @@ export default function ClassDetailPage() {
                                         <button
                                             onClick={() => setActiveTab("tasks")}
                                             className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold transition-all relative ${activeTab === "tasks"
-                                                    ? "text-emerald-700 bg-emerald-50/50"
-                                                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                                                ? "text-emerald-700 bg-emerald-50/50"
+                                                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                                                 }`}
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -484,8 +487,8 @@ export default function ClassDetailPage() {
                                         <button
                                             onClick={() => setActiveTab("portfolio")}
                                             className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold transition-all relative ${activeTab === "portfolio"
-                                                    ? "text-emerald-700 bg-emerald-50/50"
-                                                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                                                ? "text-emerald-700 bg-emerald-50/50"
+                                                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                                                 }`}
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -561,8 +564,8 @@ export default function ClassDetailPage() {
                                                             <div className="flex justify-between items-start mb-3">
                                                                 <div className="flex-1">
                                                                     <div className="flex items-center gap-2 mb-2">
-                                                                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${(task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'bg-amber-100 text-amber-700' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                                            {(task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'TEST' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'KVÍZ' : 'ÚKOL'}
+                                                                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${(task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'bg-amber-100 text-amber-700' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'bg-purple-100 text-purple-700' : task.type === 'form' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                            {(task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'TEST' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'KVÍZ' : task.type === 'form' ? 'FORMULÁŘ' : 'ÚKOL'}
                                                                         </span>
                                                                         <span className="text-xs text-gray-500">
                                                                             Termín: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Neurčeno'}
@@ -580,7 +583,7 @@ export default function ClassDetailPage() {
                                                                                     {isLate ? `Pozdní odevzdání` : `Odevzdáno`}
                                                                                 </span>
                                                                                 <button
-                                                                                    onClick={() => handleResetSubmission(task.submissionId!)}
+                                                                                    onClick={() => handleResetSubmission(task.submissionId!, task.type)}
                                                                                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                                                     title="Smazat odevzdání (resetovat)"
                                                                                 >
@@ -597,6 +600,15 @@ export default function ClassDetailPage() {
                                                                         <span className="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-medium rounded-lg">
                                                                             Neodevzdáno
                                                                         </span>
+                                                                    )}
+                                                                    {task.type === 'form' && task.formId && (
+                                                                        <Link
+                                                                            href={`/ucitel/formulare/${task.formId}/vysledky?taskId=${task.id}`}
+                                                                            className="mt-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 w-full border border-emerald-100"
+                                                                        >
+                                                                            <span>Výsledky formuláře</span>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+                                                                        </Link>
                                                                     )}
                                                                 </div>
                                                             </div>
@@ -673,7 +685,7 @@ export default function ClassDetailPage() {
                                                                             return (
                                                                                 <div className="bg-emerald-50/50 p-6 rounded-2xl border border-emerald-100 space-y-4">
                                                                                     <div className="flex justify-between items-center mb-2">
-                                                                                        <h5 className="font-bold text-emerald-900">Výsledky kvízu (Body za výsledky):</h5>
+                                                                                        <h5 className="font-bold text-emerald-900">{task.type === 'form' ? 'Výsledky formuláře' : 'Výsledky kvízu (Body za výsledky)'}:</h5>
                                                                                         <span className="text-xs font-black px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full uppercase tracking-wider">
                                                                                             Vítěz: {sorted[0]?.[0] || '-'}
                                                                                         </span>
@@ -696,10 +708,21 @@ export default function ClassDetailPage() {
                                                                                     </div>
                                                                                 </div>
                                                                             );
+                                                                        } else if (task.type === 'form') {
+                                                                            return (
+                                                                                <div className="flex justify-between items-center bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                                                                                    <h5 className="font-bold text-indigo-900">Odpovědi z formuláře:</h5>
+                                                                                </div>
+                                                                            );
                                                                         } else {
+                                                                            // Calculate general score
                                                                             let totalScore = 0;
                                                                             let maxPossible = 0;
-                                                                            task.testResults?.forEach(q => {
+                                                                            task.testResults.filter(q => {
+                                                                                const isForm = task.type === 'form';
+                                                                                const hasAnswer = (q.studentAnswerIds && q.studentAnswerIds.length > 0) || !!q.textAnswer;
+                                                                                return !isForm || hasAnswer;
+                                                                            }).forEach(q => {
                                                                                 maxPossible += q.points;
                                                                                 const correctIds = q.options.filter(o => o.isCorrect).map(o => o.id);
                                                                                 const incorrectIds = q.options.filter(o => !o.isCorrect).map(o => o.id);
@@ -724,8 +747,13 @@ export default function ClassDetailPage() {
                                                                         }
                                                                     })()}
 
-                                                                    {task.testResults.map((q, idx) => {
+                                                                    {task.testResults.filter(q => {
+                                                                        const isForm = task.type === 'form';
+                                                                        const hasAnswer = (q.studentAnswerIds && q.studentAnswerIds.length > 0) || !!q.textAnswer;
+                                                                        return !isForm || hasAnswer;
+                                                                    }).map((q, idx) => {
                                                                         const isOutcome = task.type === 'outcome' || !!task.outcomes?.length;
+                                                                        const isForm = task.type === 'form';
                                                                         const correctIds = q.options.filter(o => o.isCorrect).map(o => o.id);
                                                                         const incorrectIds = q.options.filter(o => !o.isCorrect).map(o => o.id);
                                                                         const selected = q.studentAnswerIds || [];
@@ -734,10 +762,10 @@ export default function ClassDetailPage() {
                                                                         const qScore = isOutcome ? q.points : (Math.max(0, (c - w) / (correctIds.length || 1)) * q.points);
 
                                                                         return (
-                                                                            <div key={q.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-sm transition-all hover:border-emerald-200">
+                                                                            <div key={q.id} className={`bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-sm transition-all ${isForm ? 'hover:border-indigo-200' : 'hover:border-emerald-200'}`}>
                                                                                 <div className="flex justify-between items-start mb-4">
                                                                                     <p className="font-bold text-gray-900">{idx + 1}. {q.text}</p>
-                                                                                    {!isOutcome && (
+                                                                                    {!isOutcome && !isForm && (
                                                                                         <span className="text-xs font-black px-2.5 py-1 bg-white border border-gray-100 rounded-full text-emerald-600 shadow-sm">
                                                                                             {qScore.toFixed(1)} / {q.points} b.
                                                                                         </span>
@@ -748,8 +776,8 @@ export default function ClassDetailPage() {
                                                                                         const isSelected = q.studentAnswerIds?.includes(opt.id);
                                                                                         let optionClass = "text-sm p-3 rounded-xl border transition-all flex justify-between items-center ";
 
-                                                                                        if (isOutcome) {
-                                                                                            optionClass += isSelected ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-white border-gray-100 text-gray-600";
+                                                                                        if (isOutcome || isForm) {
+                                                                                            optionClass += isSelected ? "bg-indigo-50 border-indigo-200 text-indigo-900" : "bg-white border-gray-100 text-gray-600";
                                                                                         } else {
                                                                                             if (opt.isCorrect) {
                                                                                                 optionClass += "bg-emerald-50 border-emerald-200 text-emerald-800";
@@ -763,9 +791,9 @@ export default function ClassDetailPage() {
                                                                                         return (
                                                                                             <div key={opt.id} className={optionClass}>
                                                                                                 <div className="flex items-center gap-3">
-                                                                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? (isOutcome ? 'border-emerald-500' : (opt.isCorrect ? 'border-emerald-500' : 'border-red-500')) : 'border-gray-200'
+                                                                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? (isOutcome || isForm ? 'border-indigo-500' : (opt.isCorrect ? 'border-emerald-500' : 'border-red-500')) : 'border-gray-200'
                                                                                                         }`}>
-                                                                                                        {isSelected && <div className={`w-2.5 h-2.5 rounded-full ${isOutcome ? 'bg-emerald-500' : (opt.isCorrect ? 'bg-emerald-500' : 'bg-red-500')}`}></div>}
+                                                                                                        {isSelected && <div className={`w-2.5 h-2.5 rounded-full ${isOutcome || isForm ? 'bg-indigo-500' : (opt.isCorrect ? 'bg-emerald-500' : 'bg-red-500')}`}></div>}
                                                                                                     </div>
                                                                                                     <span className="font-medium">{opt.text}</span>
                                                                                                 </div>
@@ -779,12 +807,18 @@ export default function ClassDetailPage() {
                                                                                                             ))}
                                                                                                         </div>
                                                                                                     )}
-                                                                                                    {!isOutcome && opt.isCorrect && <span className="text-[10px] font-black text-emerald-600 bg-white px-2 py-0.5 rounded border border-emerald-100 uppercase">Správně</span>}
-                                                                                                    {!isOutcome && isSelected && !opt.isCorrect && <span className="text-[10px] font-black text-red-600 bg-white px-2 py-0.5 rounded border border-red-100 uppercase">Vybráno</span>}
+                                                                                                    {!isOutcome && !isForm && opt.isCorrect && <span className="text-[10px] font-black text-emerald-600 bg-white px-2 py-0.5 rounded border border-emerald-100 uppercase">Správně</span>}
+                                                                                                    {!isOutcome && !isForm && isSelected && !opt.isCorrect && <span className="text-[10px] font-black text-red-600 bg-white px-2 py-0.5 rounded border border-red-100 uppercase">Vybráno</span>}
+                                                                                                    {isForm && !isOutcome && isSelected && <span className="text-[10px] font-black text-indigo-600 bg-white px-2 py-0.5 rounded border border-indigo-100 uppercase">Zvoleno</span>}
                                                                                                 </div>
                                                                                             </div>
                                                                                         );
                                                                                     })}
+                                                                                    {q.textAnswer && (
+                                                                                        <div className="bg-white p-4 rounded-xl border border-gray-200 text-gray-700 text-sm mt-2 font-medium">
+                                                                                            {q.textAnswer}
+                                                                                        </div>
+                                                                                    )}
                                                                                 </div>
                                                                             </div>
                                                                         )

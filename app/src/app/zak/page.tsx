@@ -8,7 +8,7 @@ interface TaskItem {
     title: string;
     description: string;
     dueDate: string;
-    type: 'classic' | 'test' | 'outcome' | 'predefined_test';
+    type: 'classic' | 'test' | 'outcome' | 'predefined_test' | 'form';
     testId: number | null;
     templateType?: string;
     isSubmitted: number;
@@ -197,8 +197,8 @@ export default function ZakPage() {
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <div className="flex items-center gap-2 mb-1">
-                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${(task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'bg-amber-100 text-amber-700' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                    {(task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'TEST' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'KVÍZ' : 'ÚKOL'}
+                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${task.type === 'form' ? 'bg-emerald-100 text-emerald-700' : (task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'bg-amber-100 text-amber-700' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {task.type === 'form' ? 'FORMULÁŘ' : (task.type === 'test' || (task.type === 'predefined_test' && task.templateType !== 'outcome')) ? 'TEST' : (task.type === 'outcome' || (task.type === 'predefined_test' && task.templateType === 'outcome')) ? 'KVÍZ' : 'ÚKOL'}
                                                 </span>
                                             </div>
                                             <h3 className="text-lg font-semibold text-slate-900">{task.title}</h3>
@@ -210,7 +210,7 @@ export default function ZakPage() {
                                     </div>
                                     <p className="text-slate-600 mt-4 text-sm line-clamp-2">{task.description}</p>
                                     <div className="mt-4 flex justify-end">
-                                        <a href={`/zak/ukoly/${task.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-700 hover:underline">
+                                        <a href={task.type === 'form' ? `/zak/formulare/${task.id}` : `/zak/ukoly/${task.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-700 hover:underline">
                                             Zobrazit detail
                                         </a>
                                     </div>

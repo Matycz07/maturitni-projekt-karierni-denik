@@ -7,7 +7,7 @@ export default function AdministratorLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="min-h-screen bg-slate-50">
             <AdminSidebar />
             <main className="lg:pl-72 min-h-screen">
                 {children}

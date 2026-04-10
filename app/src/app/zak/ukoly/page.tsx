@@ -9,7 +9,8 @@ interface TaskItem {
     title: string;
     description: string;
     dueDate: string;
-    type: 'classic' | 'test';
+    type: 'classic' | 'test' | 'form';
+    formId?: number;
     isSubmitted: number; // 0 or >0
     submittedAt?: string;
 }
@@ -68,13 +69,13 @@ export default function StudentUkolyPage() {
                         </div>
                     ) : (
                         currentTasks.map(task => (
-                            <Link key={task.id} href={`/zak/ukoly/${task.id}`}>
+                            <Link key={task.id} href={task.type === 'form' ? `/zak/formulare/${task.id}` : `/zak/ukoly/${task.id}`}>
                                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex justify-between items-center group cursor-pointer mb-4 border-l-4 border-l-indigo-500">
                                     <div>
                                         <div className="flex items-center gap-3 mb-1">
-                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${task.type === 'test' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${task.type === 'test' ? 'bg-amber-100 text-amber-700' : task.type === 'form' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'
                                                 }`}>
-                                                {task.type === 'test' ? 'TEST' : 'ÚKOL'}
+                                                {task.type === 'test' ? 'TEST' : task.type === 'form' ? 'FORMULÁŘ' : 'ÚKOL'}
                                             </span>
                                             <h3 className="text-lg font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{task.title}</h3>
                                         </div>
@@ -106,7 +107,7 @@ export default function StudentUkolyPage() {
                         </div>
                     ) : (
                         submittedTasks.map(task => (
-                            <Link key={task.id} href={`/zak/ukoly/${task.id}`}>
+                            <Link key={task.id} href={task.type === 'form' ? `/zak/formulare/${task.id}` : `/zak/ukoly/${task.id}`}>
                                 <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 hover:bg-white hover:shadow-sm transition-all flex justify-between items-center group cursor-pointer mb-4 opacity-75 hover:opacity-100">
                                     <div>
                                         <div className="flex items-center gap-3 mb-1">

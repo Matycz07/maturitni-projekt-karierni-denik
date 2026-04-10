@@ -91,7 +91,7 @@ export default function NotisekViewer({ data, isLoading = false }: NotisekViewer
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-orange-50/30">
                 <div className="flex flex-col items-center gap-3">
                     <div className="w-10 h-10 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
-                    <span className="text-slate-500 text-sm">Načítám Notísek...</span>
+                    <span className="text-slate-500 text-sm">Načítám Notýsek...</span>
                 </div>
             </div>
         );
@@ -108,7 +108,7 @@ export default function NotisekViewer({ data, isLoading = false }: NotisekViewer
                         </svg>
                     </div>
                     <div>
-                        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Notísek</h1>
+                        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Notýsek</h1>
                         <p className="text-slate-500 mt-0.5 text-sm">Přehled zdrojů</p>
                     </div>
                 </header>
@@ -133,8 +133,8 @@ export default function NotisekViewer({ data, isLoading = false }: NotisekViewer
                     </svg>
                 </div>
                 <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Notísek</h1>
-                    <p className="text-slate-500 mt-0.5 text-sm">Správa témat do notísku</p>
+                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Notýsek</h1>
+                    <p className="text-slate-500 mt-0.5 text-sm">Správa témat do notýsku</p>
                 </div>
             </header>
 
